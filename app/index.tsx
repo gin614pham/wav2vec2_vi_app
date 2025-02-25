@@ -11,6 +11,7 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import { Recording } from "expo-av/build/Audio";
 import { Audio } from "expo-av";
+import Slider from "@react-native-community/slider";
 
 export default function Index() {
   const [selectedFile, setSelectedFile] = useState<{
@@ -21,10 +22,34 @@ export default function Index() {
   const [isLoading, setIsLoading] = useState(false);
   const [transcribedText, setTranscribedText] = useState("");
   const [recording, setRecording] = useState<Recording | null>(null);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recordingInterval, setRecordingInterval] =
+    useState<NodeJS.Timeout | null>(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(1);
 
   useEffect(() => {
     setTranscribedText("");
   }, [selectedFile]);
+
+  useEffect(() => {
+    if (sound) {
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded) return;
+        setPosition(status.positionMillis);
+        setDuration(status.durationMillis || 1);
+        if (status.didJustFinish) {
+          setIsAudioPlaying(false);
+          sound.unloadAsync();
+          setSound(null);
+          setPosition(0);
+          setDuration(1);
+        }
+      });
+    }
+  }, [sound]);
 
   const pickAudioFile = async () => {
     try {
@@ -126,6 +151,12 @@ export default function Index() {
 
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
       setRecording(recording);
+
+      setRecordingDuration(0);
+      const interval = setInterval(() => {
+        setRecordingDuration((prevDuration) => prevDuration + 1);
+      }, 1000);
+      setRecordingInterval(interval);
     } catch (error) {
       console.error("Error starting recording:", error);
     }
@@ -135,9 +166,55 @@ export default function Index() {
     if (recording) {
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI() || "";
-      console.log("Recording stopped:", uri);
+
       setSelectedFile({ uri, type: "audio/wav", name: "recording.wav" });
       setRecording(null);
+
+      if (recordingInterval) {
+        clearInterval(recordingInterval);
+        setRecordingInterval(null);
+      }
+    }
+  };
+
+  const playRecording = async () => {
+    if (!selectedFile) {
+      return;
+    }
+
+    if (sound) {
+      await sound.unloadAsync();
+    }
+    const { sound: newSound } = await Audio.Sound.createAsync(
+      { uri: selectedFile?.uri as string },
+      { shouldPlay: true }
+    );
+    setSound(newSound);
+
+    setIsAudioPlaying(true);
+
+    newSound.setOnPlaybackStatusUpdate((status) => {
+      if (!status.isLoaded) return;
+
+      if (status.didJustFinish) {
+        setIsAudioPlaying(false);
+        setSound(null);
+      }
+    });
+  };
+
+  const touchPlayPause = async () => {
+    if (!sound) {
+      await playRecording();
+    } else {
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded && status.isPlaying) {
+        await sound.pauseAsync();
+        setIsAudioPlaying(false);
+      } else {
+        await sound.playAsync();
+        setIsAudioPlaying(true);
+      }
     }
   };
 
@@ -147,7 +224,11 @@ export default function Index() {
         <View style={styles.content}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Select Audio File</Text>
-            <TouchableOpacity style={styles.button} onPress={pickAudioFile}>
+            <TouchableOpacity
+              style={[styles.button, !!recording && styles.disabledButton]}
+              onPress={pickAudioFile}
+              disabled={!!recording}
+            >
               <Text style={styles.buttonText}>Choose File</Text>
             </TouchableOpacity>
             {selectedFile && (
@@ -167,21 +248,62 @@ export default function Index() {
                 {recording ? "Stop Recording" : "Start Recording"}
               </Text>
             </TouchableOpacity>
+
+            {recording && (
+              <Text style={styles.recordingDuration}>
+                Recording Duration: {recordingDuration} seconds
+              </Text>
+            )}
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.button,
-              styles.transcribeButton,
-              (!selectedFile || isLoading) && styles.disabledButton,
-            ]}
-            onPress={transcribeAudio}
-            disabled={isLoading || !selectedFile}
-          >
-            <Text style={styles.buttonText}>
-              {isLoading ? "Transcribing..." : "Transcribe Audio"}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Play Recording</Text>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                (!selectedFile || !!recording) && styles.disabledButton,
+                { backgroundColor: "#FF9500" },
+              ]}
+              onPress={touchPlayPause}
+              disabled={!selectedFile || !!recording}
+            >
+              <Text style={styles.buttonText}>
+                {isAudioPlaying ? "Stop" : "Play Recording"}
+              </Text>
+            </TouchableOpacity>
+
+            {selectedFile && (
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={duration}
+                value={position}
+                onSlidingComplete={async (value) => {
+                  if (sound) {
+                    await sound.setPositionAsync(value);
+                  }
+                }}
+              />
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Transcribe Audio</Text>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                styles.transcribeButton,
+                (!selectedFile || isLoading || !!recording) &&
+                  styles.disabledButton,
+              ]}
+              onPress={transcribeAudio}
+              disabled={isLoading || !selectedFile || !!recording}
+            >
+              <Text style={styles.buttonText}>
+                {isLoading ? "Transcribing..." : "Transcribe Audio"}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           {isLoading && (
             <ActivityIndicator
@@ -262,5 +384,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     color: "#333",
+  },
+  recordingDuration: {
+    marginTop: 10,
+    color: "#666",
+  },
+  slider: {
+    width: "100%",
+    height: 40,
+    marginTop: 10,
   },
 });
