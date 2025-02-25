@@ -12,6 +12,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { Recording } from "expo-av/build/Audio";
 import { Audio } from "expo-av";
 import Slider from "@react-native-community/slider";
+import { FontAwesome, Entypo } from "@expo/vector-icons";
+import { RadioButton } from "react-native-paper";
 
 export default function Index() {
   const [selectedFile, setSelectedFile] = useState<{
@@ -29,6 +31,7 @@ export default function Index() {
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(1);
+  const [selectMode, setSelectMode] = useState("Vietnamese");
 
   useEffect(() => {
     setTranscribedText("");
@@ -90,16 +93,16 @@ export default function Index() {
     } as any);
 
     try {
-      const response = await axios.post(
-        "http://192.168.50.96:5000/transcribe",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-          timeout: 30000,
-        }
-      );
+      const urlApi =
+        selectMode === "Vietnamese"
+          ? "http://192.168.50.96:5000/transcribe"
+          : "http://192.168.50.96:5000/transcribe_en";
+      const response = await axios.post(urlApi, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        timeout: 30000,
+      });
       setTranscribedText(response.data.transcription);
     } catch (error) {
       console.error("Error transcribing audio:", error);
@@ -224,13 +227,45 @@ export default function Index() {
         <View style={styles.content}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Select Audio File</Text>
-            <TouchableOpacity
-              style={[styles.button, !!recording && styles.disabledButton]}
-              onPress={pickAudioFile}
-              disabled={!!recording}
-            >
-              <Text style={styles.buttonText}>Choose File</Text>
-            </TouchableOpacity>
+            <View style={styles.rowButton}>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  !!recording && styles.disabledButton,
+                  { flex: 1 },
+                ]}
+                onPress={pickAudioFile}
+                disabled={!!recording}
+              >
+                <Text style={styles.buttonText}>
+                  <FontAwesome name="file-audio-o" size={20} color="white" />{" "}
+                  File
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, { flex: 1 }]}
+                onPress={recording ? stopRecording : startRecording}
+              >
+                <Text style={styles.buttonText}>
+                  {recording ? (
+                    <>
+                      Stop Recording{" "}
+                      <Entypo name="controller-stop" size={20} color="white" />
+                    </>
+                  ) : (
+                    <>
+                      Start Recording{" "}
+                      <Entypo name="mic" size={20} color="white" />
+                    </>
+                  )}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {recording && (
+              <Text style={styles.recordingDuration}>
+                Recording Duration: {recordingDuration} seconds
+              </Text>
+            )}
             {selectedFile && (
               <Text style={styles.selectedFile}>
                 Selected File: {selectedFile.name}
@@ -239,25 +274,7 @@ export default function Index() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Record Audio</Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={recording ? stopRecording : startRecording}
-            >
-              <Text style={styles.buttonText}>
-                {recording ? "Stop Recording" : "Start Recording"}
-              </Text>
-            </TouchableOpacity>
-
-            {recording && (
-              <Text style={styles.recordingDuration}>
-                Recording Duration: {recordingDuration} seconds
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Play Recording</Text>
+            <Text style={styles.sectionTitle}>Play Audio</Text>
             <TouchableOpacity
               style={[
                 styles.button,
@@ -268,7 +285,7 @@ export default function Index() {
               disabled={!selectedFile || !!recording}
             >
               <Text style={styles.buttonText}>
-                {isAudioPlaying ? "Stop" : "Play Recording"}
+                {isAudioPlaying ? "Stop" : "Play Audio"}
               </Text>
             </TouchableOpacity>
 
@@ -289,6 +306,38 @@ export default function Index() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Transcribe Audio</Text>
+
+            <Text style={[styles.sectionTitle, { fontSize: 16 }]}>
+              Select Language
+            </Text>
+            <View style={styles.radioButtonContainer}>
+              <RadioButton
+                value="Vietnamese"
+                status={selectMode === "Vietnamese" ? "checked" : "unchecked"}
+                onPress={() => setSelectMode("Vietnamese")}
+              />
+              <Text
+                onPress={() => setSelectMode("Vietnamese")}
+                style={styles.radioText}
+              >
+                Vietnamese
+              </Text>
+            </View>
+
+            <View style={styles.radioButtonContainer}>
+              <RadioButton
+                value="English"
+                status={selectMode === "English" ? "checked" : "unchecked"}
+                onPress={() => setSelectMode("English")}
+              />
+              <Text
+                onPress={() => setSelectMode("English")}
+                style={styles.radioText}
+              >
+                English
+              </Text>
+            </View>
+
             <TouchableOpacity
               style={[
                 styles.button,
@@ -393,5 +442,19 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 40,
     marginTop: 10,
+  },
+  rowButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  radioText: {
+    color: "#666",
+  },
+  radioButtonContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
 });
